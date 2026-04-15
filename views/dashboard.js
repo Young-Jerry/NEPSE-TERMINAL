@@ -67,7 +67,7 @@
   function getSipEntryMonths() {
     const sipState = readSipState();
     const sips = Array.isArray(sipState.sips) ? sipState.sips : [];
-    return sips.slice(0, 2).map((name) => {
+    return sips.map((name) => {
       const rows = Array.isArray((sipState.records || {})[name]) ? (sipState.records || {})[name] : [];
       return { name, months: rows.length };
     });
@@ -135,8 +135,8 @@
     container.innerHTML = `
       <div class="kpi-strip dash-row">
         <div class="kpi-card kpi-roi" id="dash-kpi-roi">
-          <div class="kpi-label">EXITED TRADES ROI</div>
-          <div class="kpi-value ${plCls(realized.roi)}">${plSign(realized.roi)}${fmtPct(realized.roi, 2)}</div>
+          <div class="kpi-label">EXITED TRADE BALANCE</div>
+          <div class="kpi-value ${plCls(realized.totalProfit)}">${plSign(realized.totalProfit)}${fmtRs(realized.totalProfit, 0)} (${plSign(realized.roi)}${fmtPct(realized.roi, 2)})</div>
         </div>
 
         <div class="kpi-card kpi-nw" id="dash-kpi-nw">
