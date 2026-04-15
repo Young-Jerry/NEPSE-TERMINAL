@@ -46,6 +46,10 @@
     if (!(window.PmsPrivacy && window.PmsPrivacy.isEnabled && window.PmsPrivacy.isEnabled())) return String(value);
     return window.PmsPrivacy.maskValue ? window.PmsPrivacy.maskValue() : 'XXX';
   }
+  function maskScript(value) {
+    if (!(window.PmsPrivacy && window.PmsPrivacy.isEnabled && window.PmsPrivacy.isEnabled())) return String(value || '');
+    return window.PmsPrivacy.maskValue ? window.PmsPrivacy.maskValue() : 'XXX';
+  }
 
   function pct(ltp, wacc) {
     if (!ltp || !wacc) return { text: '—', cls: 'wl-flat' };
@@ -163,7 +167,7 @@
     const d = map[`${section}-${sym}`];
     const chg = d ? pct(d.ltp, d.wacc) : { text: '—', cls: 'wl-flat' };
     return `<div class="wl-box wl-box-draggable ${section === 'long' ? 'wl-box-long' : 'wl-box-trade'}" data-section="${section}" data-slot="${slot}" data-symbol="${sym}">
-      <div class="wl-box-top"><span class="wl-box-id">${sym}</span><button class="wl-unpin-btn" data-symbol="${sym}" title="Delete from watchlist">✕</button></div>
+      <div class="wl-box-top"><span class="wl-box-id">${maskScript(sym)}</span><button class="wl-unpin-btn" data-symbol="${sym}" title="Delete from watchlist">✕</button></div>
       <div class="wl-box-sym">QTY: ${maskDigits(d ? d.qty : 0)}</div>
       <div class="wl-box-ltp">LTP: ${d ? maskDigits(Number(d.ltp).toFixed(2)) : '—'}</div>
       <div class="wl-box-chg ${chg.cls}">ROI%: ${chg.text}</div>
