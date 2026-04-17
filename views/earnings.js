@@ -63,6 +63,7 @@ function renderEarnings(container) {
           <tr>
             <th>Amount</th>
             <th>Saved On</th>
+            <th></th>
           </tr>
         </thead>
         <tbody id="earnings-tbody"></tbody>
@@ -120,15 +121,71 @@ function renderEarnings(container) {
     const tbody = container.querySelector('#earnings-tbody');
     const rows = [...(state.passiveHistory || [])].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="2"><div class="empty-state" style="padding:16px;"><div class="empty-state-sub">No passive income entries yet.</div></div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="3"><div class="empty-state" style="padding:16px;"><div class="empty-state-sub">No passive income entries yet.</div></div></td></tr>';
       return;
     }
     tbody.innerHTML = rows.map((row) => `
       <tr>
         <td class="mono">${currency(row.amount)}</td>
         <td class="mono">${new Date(row.createdAt).toLocaleDateString()}</td>
+        <td class="actions-td">
+          <div class="actions-cell">
+            <button class="btn-ghost" data-earnings-edit="${row.id}">✏️</button>
+            <button class="btn-ghost" data-earnings-del="${row.id}">🗑️</button>
+          </div>
+        </td>
       </tr>
     `).join('');
+
+    tbody.querySelectorAll('[data-earnings-del]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-earnings-del');
+        Modal.confirm({
+          title: 'Delete Passive Entry',
+          message: 'Delete this passive income history entry?',
+          confirmText: 'Delete',
+          onConfirm: () => {
+            const nextState = engine.readState();
+            nextState.passiveHistory = (nextState.passiveHistory || []).filter((entry) => entry.id !== id);
+            if (!nextState.passiveHistory.length) nextState.passiveIncome = 0;
+            else if (!Number.isFinite(Number(nextState.passiveIncome))) nextState.passiveIncome = Number(nextState.passiveHistory[0].amount || 0);
+            engine.saveState(nextState);
+            draw();
+          },
+        });
+      });
+    });
+
+    tbody.querySelectorAll('[data-earnings-edit]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-earnings-edit');
+        const target = (engine.readState().passiveHistory || []).find((entry) => entry.id === id);
+        if (!target) return;
+        Modal.open({
+          title: 'Edit Passive Entry',
+          body: `
+            <div class="form-group">
+              <label class="form-label">Amount (Rs per month)</label>
+              <input type="number" class="form-input" id="earnings-edit-amount" min="0" step="1" value="${Math.max(0, Math.round(Number(target.amount || 0)))}" />
+            </div>
+          `,
+          footer: `<button class="btn-secondary" id="earnings-edit-cancel">Cancel</button><button class="btn-primary" id="earnings-edit-save">Save</button>`,
+        });
+        const box = document.getElementById('modalBox');
+        box.querySelector('#earnings-edit-cancel')?.addEventListener('click', Modal.close);
+        box.querySelector('#earnings-edit-save')?.addEventListener('click', () => {
+          const nextAmount = Math.max(0, Math.round(Number(box.querySelector('#earnings-edit-amount')?.value || 0)));
+          const nextState = engine.readState();
+          nextState.passiveHistory = (nextState.passiveHistory || []).map((entry) => (
+            entry.id === id ? { ...entry, amount: nextAmount, updatedAt: new Date().toISOString() } : entry
+          ));
+          nextState.passiveIncome = nextAmount;
+          engine.saveState(nextState);
+          Modal.close();
+          draw();
+        });
+      });
+    });
   }
 
   draw();
