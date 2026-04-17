@@ -159,6 +159,7 @@ function updateLedgerEntry(id, patch = {}) {
   if (nextCash < 0) { showCashAlert('Not enough cash balance.'); return; }
   saveLedger(ledger);
   setCash(nextCash);
+  recalculateProfitCashedBalance();
   syncProfitBookedWithLedger();
 }
 
@@ -171,6 +172,7 @@ function deleteLedgerEntry(id) {
   if (nextCash < 0) { showCashAlert('Not enough cash balance.'); return; }
   saveLedger(ledger);
   setCash(nextCash);
+  recalculateProfitCashedBalance();
   syncProfitBookedWithLedger();
 }
 
@@ -234,6 +236,20 @@ function setProfitCashedBalance(value) {
   const safe = Math.max(0, Math.round(Number(value || 0)));
   localStorage.setItem(PROFIT_CASHED_BAL_KEY, String(safe));
   return safe;
+}
+
+function recalculateProfitCashedBalance() {
+  const ledger = readLedger();
+  const fromLedger = ledger.reduce((sum, row) => {
+    if (row.entryCategory !== 'profit') return sum;
+    const amount = Number(row.baseAmount || Math.abs(Number(row.delta || 0)));
+    if (!Number.isFinite(amount) || amount <= 0) return sum;
+    if (row.type === 'profit_out') return sum + amount;
+    if (row.type === 'profit_in') return sum - amount;
+    return sum;
+  }, 0);
+  const next = Math.max(0, Math.round(Number(readProfitCashedBase() + fromLedger)));
+  return setProfitCashedBalance(next);
 }
 
 function adjustProfitCashed(delta, meta = {}) {

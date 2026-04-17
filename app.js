@@ -12,6 +12,7 @@
     sip:        { title: 'SIP System',     render: c => window._renderSip(c) },
     pasttrades: { title: 'Past Trades',    render: c => window._renderPastTrades(c) },
     cashledger: { title: 'Cash Ledger',    render: c => window._renderCashLedger(c) },
+    allocation: { title: 'Allocation',     render: c => window._renderAllocation(c) },
     calculator: { title: 'Calculator',     render: c => window._renderCalculator(c) },
     settings:   { title: 'Settings',       render: c => window._renderSettings(c) },
   };
