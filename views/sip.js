@@ -172,7 +172,6 @@ function renderSip(container) {
       confirmText: 'Delete SIP',
       onConfirm: () => {
         const refund = (state.records[activeSip] || []).reduce((s, r) => s + Number(r.amount || 0), 0);
-        if (window.PmsCapital && refund) window.PmsCapital.adjustCash(refund);
         state.sips = state.sips.filter(s => s !== activeSip);
         delete state.records[activeSip];
         delete state.currentNav[activeSip];
@@ -382,18 +381,6 @@ function renderSip(container) {
         confirmText: 'Delete',
         onConfirm: () => {
           state.records[sipName] = (state.records[sipName] || []).filter(r => r.id !== row.id);
-          if (window.PmsCapital) {
-            if (row.fundingSource === 'profit') {
-              window.PmsCapital.adjustProfitCashed(amount, {
-                note: `${sipName} installment deleted`,
-                type: 'profit_refund',
-                kind: 'system',
-                editable: false,
-              });
-            } else {
-              window.PmsCapital.adjustCash(amount);
-            }
-          }
           Modal.close();
           persist('Installment deleted.');
         },
@@ -407,52 +394,10 @@ function renderSip(container) {
     const units = Math.floor(Number(entry.units || 0));
     const amount = units * nav;
     state.records[sipName].push({ ...entry, units, nav, amount, fundingSource });
-    if (window.PmsCapital) {
-      if (fundingSource === 'profit') window.PmsCapital.adjustProfitCashed(-amount, {
-        note: `${sipName} installment added`,
-        type: 'profit_used',
-        kind: 'system',
-        editable: false,
-      });
-      else window.PmsCapital.adjustCash(-amount);
-    }
   }
 
   function pickFundingSource(amount, onConfirm) {
-    if (!window.PmsCapital || !window.Modal) { onConfirm('cash'); return; }
-    const cashBalance = Number(window.PmsCapital.readCash() || 0);
-    const profitBalance = Number(window.PmsCapital.readProfitCashedOut() || 0);
-    const hasCash = cashBalance >= amount;
-    const hasProfit = profitBalance >= amount;
-    if (!hasCash && !hasProfit) return show('Not enough cash or profit cashed balance.');
-    if (hasCash && !hasProfit) { onConfirm('cash'); return; }
-    if (!hasCash && hasProfit) { onConfirm('profit'); return; }
-
-    Modal.open({
-      title: 'Choose Balance',
-      subtitle: 'Select one balance to fund this SIP entry',
-      body: `
-        <div style="display:grid;gap:10px;font-family:var(--font-mono);font-size:12px;">
-          <div>Required: <strong>${currency(amount)}</strong></div>
-          <label style="display:flex;align-items:center;gap:8px;">
-            <input type="radio" name="sip-funding-source" value="cash" checked />
-            <span>Cash Balance — <strong>${currency(cashBalance)}</strong></span>
-          </label>
-          <label style="display:flex;align-items:center;gap:8px;">
-            <input type="radio" name="sip-funding-source" value="profit" />
-            <span>Profit Cashed Balance — <strong>${currency(profitBalance)}</strong></span>
-          </label>
-        </div>
-      `,
-      footer: `<button class="btn-secondary" id="sip-fund-cancel">Cancel</button><button class="btn-primary" id="sip-fund-confirm">Use Balance</button>`,
-    });
-    const box = document.getElementById('modalBox');
-    box.querySelector('#sip-fund-cancel')?.addEventListener('click', Modal.close);
-    box.querySelector('#sip-fund-confirm')?.addEventListener('click', () => {
-      const source = box.querySelector('input[name="sip-funding-source"]:checked')?.value || 'cash';
-      Modal.close();
-      onConfirm(source);
-    });
+    onConfirm('investment');
   }
 
   function isMonthAllowed(sipName, month) {

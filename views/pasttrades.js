@@ -159,7 +159,6 @@ function renderPastTrades(container) {
     });
 
     localStorage.setItem(EXITED_KEY, JSON.stringify(exited));
-    if (window.PmsCapital) window.PmsCapital.adjustCash(Number(roundTrip.netRealizedAmount || roundTrip.realizedAmount || 0));
     removeRecord(record, sellQty);
     exitForm.reset();
     renderRecordOptions();

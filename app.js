@@ -10,7 +10,6 @@
     longterm:   { title: 'Long-Term',      render: c => window._renderLongTerm(c) },
     sip:        { title: 'SIP System',     render: c => window._renderSip(c) },
     pasttrades: { title: 'Past Trades',    render: c => window._renderPastTrades(c) },
-    cashledger: { title: 'Cash Ledger',    render: c => window._renderCashLedger(c) },
     calculator: { title: 'Calculator',     render: c => window._renderCalculator(c) },
     settings:   { title: 'Settings',       render: c => window._renderSettings(c) },
   };
@@ -25,7 +24,6 @@
   const statusDot        = document.getElementById('statusDot');
   const statusLabel      = document.getElementById('statusLabel');
   const statusTime       = document.getElementById('statusTime');
-  const headerCash       = document.getElementById('headerCash');
   const headerTargetValue = document.getElementById('headerTargetValue');
   const headerTargetFill = document.getElementById('headerTargetFill');
   const alertBar         = document.getElementById('alertBar');
@@ -132,7 +130,6 @@
     privacyEnabled = Boolean(next);
     localStorage.setItem(PRIVACY_KEY, privacyEnabled ? '1' : '0');
     applyPrivacyMode();
-    updateCashDisplay();
     updateHeaderTargetProgress();
     window.dispatchEvent(new CustomEvent('pms-privacy-changed', { detail: { enabled: privacyEnabled } }));
     if (currentView && ROUTES[currentView]) {
@@ -154,7 +151,6 @@
     rsPrefixEnabled = Boolean(next);
     localStorage.setItem(RS_PREFIX_KEY, rsPrefixEnabled ? '1' : '0');
     applyPrivacyMode();
-    updateCashDisplay();
     if (currentView && ROUTES[currentView]) {
       const container = document.getElementById(`view-${currentView}`);
       if (container) ROUTES[currentView].render(container);
@@ -444,29 +440,12 @@
     statusTime.textContent    = time;
   });
 
-  // ── CASH DISPLAY ──────────────────────────────────────────────────
-  function updateCashDisplay() {
-    if (window.PmsCapital) {
-      const cash = window.PmsCapital.readCash();
-      if (headerCash) {
-        if (window.PmsPrivacy && window.PmsPrivacy.isEnabled && window.PmsPrivacy.isEnabled()) {
-          headerCash.textContent = window.PmsPrivacy.maskValue();
-          return;
-        }
-        headerCash.textContent = `Rs ${new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(cash)}`;
-        if (window.PmsDisplay && !window.PmsDisplay.showRsPrefix()) {
-          headerCash.textContent = `${new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(cash)}`;
-        }
-      }
-    }
-  }
-
+  // ── TARGET PROGRESS ─────────────────────────────────────────────
   function updateHeaderTargetProgress() {
     if (!headerTargetValue || !headerTargetFill) return;
     const totals = window.Analytics ? window.Analytics.getPortfolioTotals() : { total: 0 };
     const targetWorth = 15000000;
-    const cash = window.PmsCapital ? window.PmsCapital.readCash() : 0;
-    const currentWorth = Number(totals.total || 0) + Math.max(0, Number(cash || 0));
+    const currentWorth = Number(totals.total || 0);
     const completion = Math.max(0, Math.min(100, (currentWorth / targetWorth) * 100));
     headerTargetValue.textContent = (window.PmsPrivacy && window.PmsPrivacy.isEnabled && window.PmsPrivacy.isEnabled())
       ? maskValue()
@@ -474,12 +453,8 @@
     headerTargetFill.style.width = `${completion.toFixed(2)}%`;
   }
 
-  window.addEventListener('pms-cash-updated', updateCashDisplay);
-  window.addEventListener('pms-cash-updated', updateHeaderTargetProgress);
-  updateCashDisplay();
+  window.addEventListener('pms-portfolio-updated', updateHeaderTargetProgress);
   updateHeaderTargetProgress();
-
-  if (window.PmsProfitBook) window.PmsProfitBook.syncWithLedger();
 
   // ── ALERT SYSTEM ──────────────────────────────────────────────────
   let alertTimer = null;
@@ -494,7 +469,7 @@
   }
 
   alertClose.addEventListener('click', () => alertBar.classList.add('hidden'));
-  window.PmsCapital.showCashAlert = showAlert;
+  if (window.PmsCapital) window.PmsCapital.showCashAlert = showAlert;
 
   // ── UPDATE LTP ────────────────────────────────────────────────────
   ltpBtn.addEventListener('click', () => ltpInput.click());
@@ -609,7 +584,6 @@
 
   // ── LTP-updated: only refresh current view if it's dashboard ─────
   window.addEventListener('pms-ltp-updated', () => {
-    updateCashDisplay();
     updateHeaderTargetProgress();
     // Mark non-current views dirty; re-render current immediately
     document.querySelectorAll('.view').forEach(v => { v._dirty = true; });

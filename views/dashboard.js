@@ -113,18 +113,12 @@
 
   function renderDashboard(container) {
     const totals = window.Analytics ? window.Analytics.getPortfolioTotals() : { total: 0, trades: { pl: 0, invested: 0, value: 0 }, longterm: { pl: 0, invested: 0, value: 0 }, sip: { pl: 0 } };
-    const cash = window.PmsCapital ? window.PmsCapital.readCash() : 0;
-    const realized = getRealizedRoi();
-    const longTermGain = Math.abs(Number(totals.longterm.value || 0) - Number(totals.longterm.invested || 0));
     const tradeSort = container._tradeSort || { key: 'script', dir: 'asc' };
     const longSort = container._longSort || { key: 'script', dir: 'asc' };
     const tradeFilter = container._tradeFilter || '';
     const longFilter = container._longFilter || '';
     const topTrades = getTopNBySort('trades', tradeSort, 3, tradeFilter, 'trade');
     const topLong = getTopNBySort('longterm', longSort, 3, longFilter, 'long');
-    const bookedProfit = window.PmsCapital && window.PmsCapital.readProfitCashedOut
-      ? Number(window.PmsCapital.readProfitCashedOut() || 0)
-      : 0;
 
     const sipDueDay = readSipDueDay();
     const sipDays = daysUntilSipDueDay(sipDueDay);
@@ -137,29 +131,19 @@
 
     container.innerHTML = `
       <div class="kpi-strip dash-row">
-        <div class="kpi-card kpi-roi" id="dash-kpi-roi">
-          <div class="kpi-label">EXITED TRADE BALANCE</div>
-          <div class="kpi-value kpi-value-tight ${plCls(realized.totalProfit)}">${plSign(realized.totalProfit)}${fmtRs(realized.totalProfit, 0)}</div>
+        <div class="kpi-card kpi-roi" id="dash-kpi-invested">
+          <div class="kpi-label">TOTAL INVESTED</div>
+          <div class="kpi-value kpi-value-tight neutral mono">${fmtRs(Number(totals.totalInvested || 0), 0)}</div>
         </div>
 
-        <div class="kpi-card kpi-nw" id="dash-kpi-nw">
-          <div class="kpi-label">NET WORTH</div>
+        <div class="kpi-card kpi-nw" id="dash-kpi-current">
+          <div class="kpi-label">CURRENT VALUE</div>
           <div class="kpi-value neutral mono">${fmtRs(Number(totals.total || 0), 0)}</div>
         </div>
 
-        <div class="kpi-card kpi-pl" id="dash-kpi-ltg">
-          <div class="kpi-label">LONG TERM GAIN</div>
-          <div class="kpi-value mono profit">${fmtRs(longTermGain, 0)}</div>
-        </div>
-
-        <div class="kpi-card kpi-cash" id="dash-kpi-cash">
-          <div class="kpi-label">CASH BALANCE</div>
-          <div class="kpi-value cash-color mono">${fmtRs(Math.abs(cash), 0)}</div>
-        </div>
-
-        <div class="kpi-card kpi-booked" id="dash-kpi-booked">
-          <div class="kpi-label">BOOKED PROFITS</div>
-          <div class="kpi-value mono ${plCls(bookedProfit)}">${plSign(bookedProfit)}${fmtRs(bookedProfit, 0)}</div>
+        <div class="kpi-card kpi-pl" id="dash-kpi-growth">
+          <div class="kpi-label">PORTFOLIO GROWTH</div>
+          <div class="kpi-value mono ${plCls(Number(totals.total || 0) - Number(totals.totalInvested || 0))}">${plSign(Number(totals.total || 0) - Number(totals.totalInvested || 0))}${fmtRs(Number(totals.total || 0) - Number(totals.totalInvested || 0), 0)}</div>
         </div>
 
       </div>
@@ -313,10 +297,9 @@
 
   function showNetWorthModal(totals) {
     const nw = totals.total;
-    const bookedProfit = Number(totals.bookedProfit || 0);
     window.Modal && Modal.open({
       title: 'Net Worth Breakdown',
-      body: `<div style="font-family:var(--font-mono);font-size:12px;display:grid;gap:8px;"><div>Active Trades: <strong>${fmtRs(totals.trades.value || 0, 0)}</strong></div><div>Long-Term: <strong>${fmtRs(totals.longterm.value || 0, 0)}</strong></div><div>SIP / MF: <strong>${fmtRs(totals.sip.value || 0, 0)}</strong></div><div>Booked Profits (Cash Ledger): <strong>${fmtRs(bookedProfit, 0)}</strong></div><div>NET WORTH: <strong style="color:var(--blue);">${fmtRs(nw, 0)}</strong></div></div>`,
+      body: `<div style="font-family:var(--font-mono);font-size:12px;display:grid;gap:8px;"><div>Active Trades: <strong>${fmtRs(totals.trades.value || 0, 0)}</strong></div><div>Long-Term: <strong>${fmtRs(totals.longterm.value || 0, 0)}</strong></div><div>SIP / MF: <strong>${fmtRs(totals.sip.value || 0, 0)}</strong></div><div>CURRENT VALUE: <strong style="color:var(--blue);">${fmtRs(nw, 0)}</strong></div></div>`,
       footer: `<button class="btn-secondary" onclick="Modal.close()">Close</button>`,
     });
   }
