@@ -1,16 +1,44 @@
-/**
- * Trades View
- */
-function renderTrades(container) {
-  const view = createPortfolioView({
-    storageKey: 'trades',
-    showRanges: true,
-    showInvested: true,
-    title: 'Active Trades',
-    subtitle: 'Short-term trading positions with sell targets',
-  });
-  container.innerHTML = '';
-  container.appendChild(view);
-}
-
-window._renderTrades = renderTrades;
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NEPSE Terminal</title>
+  <link rel="icon" href="assets/favicon.jpg" />
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <aside class="sidebar open" id="sidebar">
+    <div class="brand">NEPSE <span>Terminal</span></div>
+    <button class="nav-item active" data-view="dashboard">Dashboard</button>
+    <button class="nav-item" data-view="trades">Trades</button>
+    <button class="nav-item" data-view="longterm">Long-Term</button>
+    <button class="nav-item" data-view="sip">SIP System</button>
+    <button class="nav-item" data-view="pasttrades">Past Trades</button>
+    <button class="nav-item" data-view="cashledger">Cash Ledger</button>
+    <button class="nav-item" data-view="calculator">Calculator</button>
+    <button class="nav-item" data-view="settings">Settings</button>
+  </aside>
+  <div id="sidebarBackdrop" class="sidebar-backdrop"></div>
+  <main class="app-shell">
+    <header class="topbar">
+      <button id="hamburger" class="icon-btn">☰</button>
+      <div><h1 id="pageTitle">DASHBOARD</h1><div class="market-status"><span id="statusDot" class="status-dot"></span><span id="statusLabel">Loading</span><span id="statusTime"></span></div></div>
+      <div class="top-actions">
+        <div class="cash-card">Cash <strong id="headerCash">Rs 0</strong></div>
+        <div class="target-card"><span>Target <b id="headerTargetValue">0%</b></span><i><em id="headerTargetFill"></em></i></div>
+        <button id="privacyToggleBtn" class="chip">VISIBLE</button><button id="rsToggleBtn" class="chip">₹ ON</button><button id="themeToggleBtn" class="chip">☾</button><button id="calcPopupBtn" class="chip">Calc</button>
+        <button id="updateLtpBtn" class="btn-primary">Update LTP</button><span id="ltpStatus"></span><button id="downloadDataBtn" class="btn-secondary">Export</button><button id="uploadDataBtn" class="btn-secondary">Import</button>
+      </div>
+      <input id="ltpFileInput" type="file" accept=".csv,text/csv" hidden /><input id="dataFileInput" type="file" accept=".csv,text/csv" hidden />
+    </header>
+    <div id="alertBar" class="alert hidden"><span id="alertText"></span><button id="alertClose">×</button></div>
+    <section class="view-container">
+      <div id="view-dashboard" class="view"></div><div id="view-trades" class="view hidden"></div><div id="view-longterm" class="view hidden"></div><div id="view-sip" class="view hidden"></div><div id="view-pasttrades" class="view hidden"></div><div id="view-cashledger" class="view hidden"></div><div id="view-calculator" class="view hidden"></div><div id="view-settings" class="view hidden"></div>
+    </section>
+  </main>
+  <div id="modalOverlay" class="modal-overlay hidden"></div><div id="calcFloat" class="calc-float hidden"></div>
+  <script src="core/engine.js"></script><script src="core/modal.js"></script><script src="core/portfolio-table.js"></script><script src="core/watchlist.js"></script>
+  <script src="views/dashboard.js"></script><script src="views/trades.js"></script><script src="views/longterm.js"></script><script src="views/sip.js"></script><script src="views/pasttrades.js"></script><script src="views/cashledger-view.js"></script><script src="views/calculator.js"></script><script src="views/settings-view.js"></script><script src="core/app.js"></script>
+</body>
+</html>
