@@ -1,645 +1,545 @@
 /**
- * SM-Terminal v4 — App Shell
- * SPA router, sidebar nav, market clock, LTP handler, Update Data system
+ * SIP / Mutual Fund View
+ * Fully preserves all original mf.js financial logic
  */
-(() => {
-  // ── ROUTE CONFIG ─────────────────────────────────────────────────
-  const ROUTES = {
-    dashboard:   { title: 'Dashboard',             context: 'MAIN', render: c => window._renderDashboard(c) },
-    calendar:    { title: 'Performance Calendar',  context: 'MAIN', render: c => window._renderDashboard(c) },
-    journal:     { title: 'Journal Vault',         context: 'MAIN', render: c => window._renderTrades(c) },
-    execution:   { title: 'Execution',             context: 'TRADING', render: c => window._renderTrading(c) },
-    learning:    { title: 'Learning',              context: 'TRADING', render: c => window._renderForexMarkets(c) },
-    demoprogress:{ title: 'Demo Progress',         context: 'TRADING', render: c => window._renderPastTrades(c) },
-    propchallenge:{ title: 'Prop Challenge',       context: 'TRADING', render: c => window._renderCalculator(c) },
-    portfolio:   { title: 'Portfolio',             context: 'NEPSE', render: c => window._renderDashboard(c) },
-    watchlist:   { title: 'Watchlist',             context: 'NEPSE', render: c => window._renderDashboard(c) },
-    notes:       { title: 'Notes',                 context: 'NEPSE', render: c => window._renderTrades(c) },
-    discipline:  { title: 'Discipline',            context: 'LIFE OS', render: c => window._renderLifeOS(c) },
-    habits:      { title: 'Habits',                context: 'LIFE OS', render: c => window._renderLifeOS(c) },
-    reading:     { title: 'Reading',               context: 'LIFE OS', render: c => window._renderLifeOS(c) },
-    skillprogress:{ title: 'Skill Progress',       context: 'LIFE OS', render: c => window._renderLifeOS(c) },
-    settings:    { title: 'Settings',              context: 'SYSTEM', render: c => window._renderSettings(c) },
-  };
+function renderSip(container) {
+  const SIP_KEY = 'sipStateV4';
 
-  // Track which views have been rendered so Update Data can reset them
-  const renderedViews = new Set();
+  let state = readState();
+  let activeSip = (state.activeSip && (state.activeSip === 'ALL_SIP' || state.sips.includes(state.activeSip)))
+    ? state.activeSip : 'ALL_SIP';
 
-  // ── DOM REFS ──────────────────────────────────────────────────────
-  const sidebar          = document.getElementById('sidebar');
-    const pageTitle        = document.getElementById('pageTitle');
-  const statusDot        = document.getElementById('statusDot');
-  const statusLabel      = document.getElementById('statusLabel');
-  const statusTime       = document.getElementById('statusTime');
-  const headerTargetValue = document.getElementById('headerTargetValue');
-  const headerTargetFill = document.getElementById('headerTargetFill');
-  const alertBar         = document.getElementById('alertBar');
-  const alertText        = document.getElementById('alertText');
-  const alertClose       = document.getElementById('alertClose');
-  const ltpBtn           = document.getElementById('updateLtpBtn');
-  const ltpInput         = document.getElementById('ltpFileInput');
-  const downloadDataBtn  = document.getElementById('downloadDataBtn');
-  const uploadDataBtn    = document.getElementById('uploadDataBtn');
-  const dataFileInput    = document.getElementById('dataFileInput');
-  const ltpStatus        = document.getElementById('ltpStatus');
-  const pageContext      = document.getElementById('pageContext');
-  const ktmTime          = document.getElementById('ktmTime');
-  const nyTime           = document.getElementById('nyTime');
-  const sessionIndicator = document.getElementById('sessionIndicator');
-  const themeToggleBtn   = document.getElementById('themeToggleBtn');
-  const privacyToggleBtn = document.getElementById('privacyToggleBtn');
-  const rsToggleBtn      = document.getElementById('rsToggleBtn');
-  const calcPopupBtn     = document.getElementById('calcPopupBtn');
-  const calcFloat        = document.getElementById('calcFloat');
+  container.innerHTML = `
+    <div class="section-header mb16">
+      <div>
+        <div class="section-title">SIP / Mutual Funds</div>
+        <div class="section-sub">Systematic Investment Plan tracker · click a history row to view details</div>
+      </div>
+      <span class="save-indicator" id="sip-save-ind">Saved ✓</span>
+    </div>
 
-  // ── SIDEBAR OVERLAY ────────────────────────────────────────────────
-  const backdrop = document.getElementById('sidebarBackdrop');
-  function openSidebar(showBackdrop = true) {
-    sidebar.classList.add('open');
-    document.body.classList.add('sidebar-open');
-    if (backdrop && showBackdrop && window.innerWidth < 900) backdrop.classList.add('visible');
-  }
+    <!-- SIP Tabs -->
+    <div class="sip-tabs" id="sipTabs"></div>
 
-  if (backdrop) backdrop.style.display = 'none';
-  openSidebar(false);
+    <!-- Summary -->
+    <div class="metrics-grid" id="sip-metrics"></div>
 
+    <!-- Controls Row -->
+    <div class="dashboard-row" style="grid-template-columns:1.35fr 1fr;" id="sipControlRow">
+      <!-- NAV + SIP Setup -->
+      <div class="add-panel">
+        <div class="add-panel-title">Update Current NAV</div>
+        <form id="sip-nav-form" autocomplete="off">
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">SIP</label>
+              <select class="form-select" name="sipName" id="sip-nav-select"></select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Current NAV</label>
+              <input type="number" class="form-input" name="nav" min="0.01" step="0.01" placeholder="15.00" />
+            </div>
+            <div class="form-group" style="align-self:end;">
+              <button type="submit" class="btn-primary" style="width:100%;">Update</button>
+            </div>
+          </div>
+        </form>
 
-  // ── PRIVACY MODE ────────────────────────────────────────────────
-  const PRIVACY_KEY = 'pms_privacy_mode_v1';
-  const RS_PREFIX_KEY = 'pms_show_rs_prefix_v1';
-  const THEME_KEY = 'pms_theme_v1';
-    let privacyEnabled = localStorage.getItem(PRIVACY_KEY) === '1';
-  let rsPrefixEnabled = localStorage.getItem(RS_PREFIX_KEY) !== '0';
-  let currentTheme = 'dark';
+        <div style="height:1px;background:var(--border);margin:14px 0;"></div>
 
-  function maskDigits(text) {
-    return String(text || '').replace(/\d/g, 'X');
-  }
+        <div class="add-panel-title" style="margin-bottom:10px;">Add SIP</div>
+        <form id="sip-add-form" autocomplete="off">
+          <div class="form-grid" style="grid-template-columns:1fr auto;">
+            <div class="form-group">
+              <label class="form-label">SIP Name</label>
+              <input type="text" class="form-input" name="newSipName" placeholder="e.g. NIFRA" />
+            </div>
+            <div class="form-group" style="align-self:end;">
+              <button type="submit" class="btn-primary">Add</button>
+            </div>
+          </div>
+        </form>
 
-  function maskValue() {
-    return 'XXX';
-  }
+        <button class="btn-danger mt16" id="sip-delete-btn" style="font-size:11px;">Delete Selected SIP</button>
+      </div>
 
-  function maskStaticValues(root, enabled) {
-    if (!root) return;
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    let node;
-    while ((node = walker.nextNode())) {
-      const parent = node.parentElement;
-      if (!parent) continue;
-      const tag = parent.tagName;
-      if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT' || tag === 'TEXTAREA') continue;
-      if (parent.closest('input, textarea, [contenteditable="true"]')) continue;
-      const text = (node.nodeValue || '').trim();
-      if (!text) continue;
-      if (enabled) {
-        const shouldMask = /\d/.test(text);
-        if (!shouldMask) continue;
-        if (!parent.dataset.privateOriginal) parent.dataset.privateOriginal = node.nodeValue;
-        node.nodeValue = 'XXX';
-      } else if (parent.dataset.privateOriginal) {
-        node.nodeValue = parent.dataset.privateOriginal;
-        delete parent.dataset.privateOriginal;
-      }
-    }
-  }
+      <!-- Add Installment -->
+      <div class="add-panel">
+        <div class="add-panel-title">Add Installment</div>
+        <form id="sip-inst-form" autocomplete="off">
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">SIP</label>
+              <select class="form-select" name="sipName" id="sip-inst-select"></select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Date</label>
+              <input type="date" class="form-input" name="date" id="sip-inst-date" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Units</label>
+              <input type="number" class="form-input" name="units" min="1" step="1" placeholder="50" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">NAV</label>
+              <input type="number" class="form-input" name="nav" min="0.01" step="0.01" placeholder="12.00" />
+            </div>
+            <div class="form-group" style="align-self:end;">
+              <button type="submit" class="btn-primary" style="width:100%;">Add</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
 
-  function maskInlineInputs(root, enabled) {
-    root.querySelectorAll('input.inline-edit, input.ltp-input').forEach((input) => {
-      if (enabled) {
-        input.dataset.realValue = input.value;
-        input.value = maskValue();
-        input.type = 'text';
-        input.readOnly = true;
-        input.classList.add('privacy-masked-input');
-      } else if (input.dataset.realValue != null) {
-        input.value = input.dataset.realValue;
-        delete input.dataset.realValue;
-        input.readOnly = false;
-        input.classList.remove('privacy-masked-input');
-      }
+    <!-- Table -->
+    <div class="table-wrapper mt8" id="sip-table-wrap">
+      <table>
+        <thead id="sip-thead">
+          <tr></tr>
+        </thead>
+        <tbody id="sip-tbody"></tbody>
+      </table>
+    </div>
+    <div id="sip-msg" style="font-size:12px;color:var(--amber);margin-top:8px;"></div>
+  `;
+
+  const addForm  = container.querySelector('#sip-add-form');
+  const instForm = container.querySelector('#sip-inst-form');
+  const navForm  = container.querySelector('#sip-nav-form');
+  const delBtn   = container.querySelector('#sip-delete-btn');
+  const tabsEl   = container.querySelector('#sipTabs');
+  const msgEl    = container.querySelector('#sip-msg');
+  const saveInd  = container.querySelector('#sip-save-ind');
+
+  addForm.addEventListener('submit', e => {
+    e.preventDefault();
+    const name = addForm.elements.newSipName.value.trim().toUpperCase();
+    if (!name) return show('Enter a SIP name.');
+    if (state.sips.includes(name)) return show('SIP already exists.');
+    state.sips.push(name);
+    state.records[name] = state.records[name] || [];
+    state.currentNav[name] = 0;
+    state.registeredAt = state.registeredAt || {};
+    state.registeredAt[name] = month15(todayMonth());
+    activeSip = name;
+    addForm.reset();
+    persist('SIP added.');
+  });
+
+  instForm.addEventListener('submit', e => {
+    e.preventDefault();
+    const fd = new FormData(instForm);
+    const sipName = String(fd.get('sipName'));
+    const date    = String(fd.get('date'));
+    const month   = monthFromDate(date);
+    const units   = Math.floor(num(fd.get('units')));
+    const nav     = num(fd.get('nav'));
+    if (!sipName || !isValidDate(date)) return show('Select a valid date.');
+    if (!isFinite(units) || !isFinite(nav) || units <= 0 || nav <= 0) return show('Invalid QTY/NAV.');
+    if (!isMonthAllowed(sipName, month)) return show(`Month must be on/after ${minimumMonthForSip(sipName)}.`);
+    if (monthExists(sipName, month)) return show('Month already paid for this SIP.');
+    const amount = units * nav;
+    pickFundingSource(amount, (source) => {
+      addEntry(sipName, { id: crypto.randomUUID(), date, units, nav }, source);
+      instForm.reset();
+      persist('Installment added.');
+    });
+  });
+
+  navForm.addEventListener('submit', e => {
+    e.preventDefault();
+    const fd = new FormData(navForm);
+    const sipName = String(fd.get('sipName'));
+    const nav = num(fd.get('nav'));
+    if (!isFinite(nav) || nav <= 0) return;
+    state.currentNav[sipName] = nav;
+    persist('NAV updated.');
+  });
+
+  const navSelectEl = container.querySelector('#sip-nav-select');
+  if (navSelectEl) {
+    navSelectEl.addEventListener('change', () => {
+      if (navForm?.elements?.nav) navForm.elements.nav.value = '';
     });
   }
 
-  function applyPrivacyMode() {
-    document.body.classList.toggle('privacy-on', privacyEnabled);
-    if (privacyToggleBtn) {
-      privacyToggleBtn.textContent = privacyEnabled ? 'HIDDEN' : 'VISIBLE';
-      privacyToggleBtn.classList.toggle('active', !privacyEnabled);
+  delBtn.addEventListener('click', () => {
+    if (!activeSip || activeSip === 'ALL_SIP') return show('Select a SIP to delete.');
+    Modal.confirm({
+      title: `Delete ${activeSip}`,
+      message: `This will refund the invested amount and remove all installment records.`,
+      confirmText: 'Delete SIP',
+      onConfirm: () => {
+        const refund = (state.records[activeSip] || []).reduce((s, r) => s + Number(r.amount || 0), 0);
+        if (window.PmsCapital && refund) window.PmsCapital.adjustCash(refund);
+        state.sips = state.sips.filter(s => s !== activeSip);
+        delete state.records[activeSip];
+        delete state.currentNav[activeSip];
+        activeSip = 'ALL_SIP';
+        persist('SIP deleted.');
+      },
+    });
+  });
+
+  render();
+
+  function render() {
+    renderTabs();
+    renderSelects();
+    renderMetrics();
+    renderTable();
+    updateSaveInd();
+  }
+
+  function renderTabs() {
+    tabsEl.innerHTML = '';
+    const allBtn = makeTabBtn('ALL_SIP', 'All SIPs');
+    tabsEl.appendChild(allBtn);
+    state.sips.forEach(name => tabsEl.appendChild(makeTabBtn(name, name)));
+  }
+
+  function makeTabBtn(value, label) {
+    const btn = document.createElement('button');
+    btn.className = 'sip-tab-btn' + (activeSip === value ? ' active' : '');
+    btn.textContent = label;
+    btn.addEventListener('click', () => {
+      activeSip = value;
+      if (navForm) navForm.reset();
+      render();
+    });
+    return btn;
+  }
+
+  function renderSelects() {
+    const opts = state.sips.map(n => `<option value="${escHtml(n)}">${escHtml(n)}</option>`).join('');
+    const instSelect = container.querySelector('#sip-inst-select');
+    const navSelect = container.querySelector('#sip-nav-select');
+    instSelect.innerHTML = opts;
+    navSelect.innerHTML = opts;
+    if (activeSip !== 'ALL_SIP' && state.sips.includes(activeSip)) {
+      instSelect.value = activeSip;
+      navSelect.value = activeSip;
     }
-    if (rsToggleBtn) {
-      rsToggleBtn.textContent = rsPrefixEnabled ? '₹ ON' : '₹ OFF';
-      rsToggleBtn.classList.toggle('active', rsPrefixEnabled);
-    }
-    maskInlineInputs(document, privacyEnabled);
-    maskStaticValues(document.body, privacyEnabled);
+    const navInput = navForm?.elements?.nav;
+    if (navInput) navInput.value = '';
+    // Set today in date input if empty
+    const dateInput = container.querySelector('#sip-inst-date');
+    if (dateInput && !dateInput.value) dateInput.value = todayDate();
   }
 
-  function setPrivacyMode(next) {
-    privacyEnabled = Boolean(next);
-    localStorage.setItem(PRIVACY_KEY, privacyEnabled ? '1' : '0');
-    applyPrivacyMode();
-    updateCashDisplay();
-    updateHeaderTargetProgress();
-    window.dispatchEvent(new CustomEvent('pms-privacy-changed', { detail: { enabled: privacyEnabled } }));
-    if (currentView && ROUTES[currentView]) {
-      const container = document.getElementById(`view-${currentView}`);
-      if (container) ROUTES[currentView].render(container);
-    }
-    applyPrivacyMode();
-  }
+  function renderMetrics() {
+    const el = container.querySelector('#sip-metrics');
+    const sips = activeSip === 'ALL_SIP' ? state.sips : [activeSip];
 
-  window.PmsPrivacy = {
-    isEnabled: () => privacyEnabled,
-    maskDigits,
-    maskValue,
-    apply: applyPrivacyMode,
-    setEnabled: setPrivacyMode,
-  };
+    let totalUnits = 0, totalInvested = 0, totalValue = 0;
+    sips.forEach(name => {
+      const rows = state.records[name] || [];
+      const u = rows.reduce((s, r) => s + Number(r.units || 0), 0);
+      const inv = rows.reduce((s, r) => s + Number(r.amount || (Number(r.units || 0) * Number(r.nav || 0))), 0);
+      const nav = Number(state.currentNav[name] || 0);
+      totalUnits    += u;
+      totalInvested += inv;
+      totalValue    += u * nav;
+    });
 
-  function setRsPrefixMode(next) {
-    rsPrefixEnabled = Boolean(next);
-    localStorage.setItem(RS_PREFIX_KEY, rsPrefixEnabled ? '1' : '0');
-    applyPrivacyMode();
-    updateCashDisplay();
-    if (currentView && ROUTES[currentView]) {
-      const container = document.getElementById(`view-${currentView}`);
-      if (container) ROUTES[currentView].render(container);
-    }
-    applyPrivacyMode();
-    updateHeaderTargetProgress();
-    window.dispatchEvent(new CustomEvent('pms-rs-prefix-changed', { detail: { enabled: rsPrefixEnabled } }));
-  }
+    const pl = totalValue - totalInvested;
+    const roi = totalInvested > 0 ? (pl / totalInvested) * 100 : 0;
 
-  window.PmsDisplay = {
-    showRsPrefix: () => rsPrefixEnabled,
-    setRsPrefixEnabled: setRsPrefixMode,
-  };
+    const selectedSipNavCard = activeSip !== 'ALL_SIP'
+      ? `
+      <div class="metric-card">
+        <div class="metric-label">Selected SIP NAV</div>
+        <div class="metric-value mono">Rs ${fmtNav(Number(state.currentNav[activeSip] || 0))}</div>
+      </div>`
+      : '';
 
-
-  if (privacyToggleBtn) privacyToggleBtn.addEventListener('click', () => setPrivacyMode(!privacyEnabled));
-  if (rsToggleBtn) rsToggleBtn.addEventListener('click', () => setRsPrefixMode(!rsPrefixEnabled));
-
-  function applyTheme(theme) {
-    currentTheme = theme === 'dark' ? 'dark' : 'light';
-    document.documentElement.setAttribute('data-theme', currentTheme);
-    localStorage.setItem(THEME_KEY, currentTheme);
-  }
-  currentTheme = localStorage.getItem(THEME_KEY) || 'dark';
-  applyTheme(currentTheme);
-  if (themeToggleBtn) themeToggleBtn.addEventListener('click', () => applyTheme(currentTheme === 'dark' ? 'light' : 'dark'));
-
-  // ── FLOATING CALCULATOR ─────────────────────────────────────────
-  const QUICK_CALC_HISTORY_KEY = 'pms_quick_calc_history_v1';
-
-  function readQuickCalcHistory() {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(QUICK_CALC_HISTORY_KEY) || '[]');
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-
-  function writeQuickCalcHistory(entries) {
-    localStorage.setItem(QUICK_CALC_HISTORY_KEY, JSON.stringify(entries.slice(0, 3)));
-  }
-
-  function mountQuickCalculator() {
-    if (!calcFloat) return;
-    calcFloat.innerHTML = `
-      <div class="calc-float-header" id="calcFloatHeader">
-        <span>Quick Calculator</span>
-        <button class="calc-float-close" id="calcFloatClose" aria-label="Close calculator">✕</button>
+    el.innerHTML = `
+      ${selectedSipNavCard}
+      <div class="metric-card">
+        <div class="metric-label">Total Units</div>
+        <div class="metric-value">${new Intl.NumberFormat('en-IN').format(Math.floor(totalUnits))}</div>
       </div>
-      <div class="calc-float-body" id="calcFloatBody">
-        <div class="quick-calc-wrap">
-          <input class="form-input quick-calc-input mono" id="quickCalcInput" placeholder="Type or paste expression e.g. (1200+345)/3" />
-          <div class="quick-calc-actions">
-            <button class="btn-primary" id="quickCalcEvalBtn" type="button">= Evaluate</button>
-            <button class="btn-secondary" id="quickCalcClearBtn" type="button">Clear</button>
-          </div>
-          <div class="quick-calc-result mono" id="quickCalcResult">Result: -</div>
-          <div class="quick-calc-pad" id="quickCalcPad">
-            <button type="button" data-token="7">7</button><button type="button" data-token="8">8</button><button type="button" data-token="9">9</button><button type="button" data-token="/">÷</button><button type="button" data-token="%">%</button>
-            <button type="button" data-token="4">4</button><button type="button" data-token="5">5</button><button type="button" data-token="6">6</button><button type="button" data-token="*">×</button><button type="button" data-token="(">(</button>
-            <button type="button" data-token="1">1</button><button type="button" data-token="2">2</button><button type="button" data-token="3">3</button><button type="button" data-token="-">−</button><button type="button" data-token=")">)</button>
-            <button type="button" data-token="0">0</button><button type="button" data-token=".">.</button><button type="button" data-token="+">+</button><button type="button" data-token="Backspace">⌫</button><button type="button" data-token="Enter">=</button>
-          </div>
-          <div class="quick-calc-history">
-            <div class="quick-calc-history-title">Last 3 history</div>
-            <ul id="quickCalcHistoryList"></ul>
-          </div>
-        </div>
+      <div class="metric-card">
+        <div class="metric-label">Total Invested</div>
+        <div class="metric-value">${currency(totalInvested)}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Current Value</div>
+        <div class="metric-value">${currency(totalValue)}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Unrealized P/L</div>
+        <div class="metric-value ${plClass(pl)}">${currency(pl)}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">ROI</div>
+        <div class="metric-value ${plClass(roi)}">${pct(roi)}</div>
       </div>
     `;
+  }
 
-    const header = calcFloat.querySelector('#calcFloatHeader');
-    const closeBtn = calcFloat.querySelector('#calcFloatClose');
-    const input = calcFloat.querySelector('#quickCalcInput');
-    const resultEl = calcFloat.querySelector('#quickCalcResult');
-    const historyEl = calcFloat.querySelector('#quickCalcHistoryList');
-    const pad = calcFloat.querySelector('#quickCalcPad');
-    const evalBtn = calcFloat.querySelector('#quickCalcEvalBtn');
-    const clearBtn = calcFloat.querySelector('#quickCalcClearBtn');
-    function normalizeCalcInput(raw) {
-      return String(raw || '').replace(/,/g, '');
-    }
+  function renderTable() {
+    const thead = container.querySelector('#sip-thead tr');
+    const tbody = container.querySelector('#sip-tbody');
+    thead.innerHTML = '';
+    tbody.innerHTML = '';
 
-    function formatCalcInput(raw) {
-      const clean = normalizeCalcInput(raw);
-      if (!clean || /[+\-*/()%]/.test(clean)) return clean;
-      if (!/^-?\d*\.?\d*$/.test(clean)) return clean;
-      const [intPart, decPart] = clean.split('.');
-      const sign = intPart.startsWith('-') ? '-' : '';
-      const absInt = sign ? intPart.slice(1) : intPart;
-      const grouped = absInt ? new Intl.NumberFormat('en-IN').format(Number(absInt)) : '0';
-      return decPart != null ? `${sign}${grouped}.${decPart}` : `${sign}${grouped}`;
-    }
+    const sips = activeSip === 'ALL_SIP' ? state.sips : [activeSip];
+    const cols = activeSip === 'ALL_SIP'
+      ? ['SIP', 'Units', 'WACC', 'Amt', 'CurrentNAV', 'CurrentValue', 'P/L']
+      : ['Date','Units','NAV','Amount','Current NAV','Current Value','P/L'];
 
-    function renderHistory() {
-      const history = readQuickCalcHistory();
-      historyEl.innerHTML = history.length
-        ? history.map(item => `<li><button type="button" class="quick-calc-history-item" data-expr="${escHtml(item.expr)}">${escHtml(item.expr)} = <strong>${escHtml(String(item.result))}</strong></button></li>`).join('')
-        : '<li class="quick-calc-history-empty">No history yet.</li>';
-      historyEl.querySelectorAll('.quick-calc-history-item').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          input.value = btn.dataset.expr || '';
-          input.focus();
+    cols.forEach(c => { const th = document.createElement('th'); th.textContent = c; thead.appendChild(th); });
+
+    sips.forEach(sipName => {
+      const rows = [...(state.records[sipName] || [])].sort((a, b) => a.date.localeCompare(b.date));
+      const currentNav = Number(state.currentNav[sipName] || 0);
+
+      if (activeSip === 'ALL_SIP') {
+        const units = rows.reduce((s, r) => s + Math.floor(Number(r.units || 0)), 0);
+        const amount = rows.reduce((s, r) => s + (Math.floor(Number(r.units || 0)) * Number(r.nav || 0)), 0);
+        const wacc = units > 0 ? amount / units : 0;
+        const currentValue = units * currentNav;
+        const pl = currentValue - amount;
+        const tr = document.createElement('tr');
+        [sipName, fmtQty(units), fmtNav(wacc), currency(amount), fmtNav(currentNav), currency(currentValue)].forEach((val, i) => {
+          const td = document.createElement('td');
+          td.textContent = val;
+          if (i === 0) td.classList.add('text-col');
+          tr.appendChild(td);
         });
-      });
-    }
-
-    function evaluateExpression(raw) {
-      const normalized = normalizeCalcInput(String(raw || '').replace(/[×x]/g, '*').replace(/[÷]/g, '/')).trim();
-      if (!normalized) return { ok: false, message: 'Result: -' };
-      if (!/^[\d+\-*/%().\s]+$/.test(normalized)) return { ok: false, message: 'Result: Invalid expression' };
-      try {
-        const result = Function(`"use strict"; return (${normalized})`)();
-        if (!Number.isFinite(result)) return { ok: false, message: 'Result: Invalid expression' };
-        return { ok: true, result };
-      } catch {
-        return { ok: false, message: 'Result: Invalid expression' };
-      }
-    }
-
-    function applyEvaluate() {
-      const outcome = evaluateExpression(input.value);
-      if (!outcome.ok) {
-        resultEl.textContent = outcome.message;
+        const plTd = document.createElement('td');
+        plTd.textContent = currency(pl);
+        plTd.className = plClass(pl);
+        tr.appendChild(plTd);
+        tbody.appendChild(tr);
         return;
       }
-      const result = Number(outcome.result.toFixed(10));
-      resultEl.textContent = `Result: ${new Intl.NumberFormat('en-IN', { maximumFractionDigits: 10 }).format(result)}`;
-      const history = readQuickCalcHistory();
-      history.unshift({ expr: normalizeCalcInput(input.value.trim()), result: new Intl.NumberFormat('en-IN', { maximumFractionDigits: 10 }).format(result) });
-      writeQuickCalcHistory(history);
-      renderHistory();
-    }
 
-    evalBtn.addEventListener('click', applyEvaluate);
-    clearBtn.addEventListener('click', () => {
-      input.value = '';
-      resultEl.textContent = 'Result: -';
-      input.focus();
-    });
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        applyEvaluate();
-      }
-    });
-    input.addEventListener('input', () => {
-      const pos = input.selectionStart;
-      input.value = formatCalcInput(input.value);
-      if (typeof pos === 'number') input.setSelectionRange(Math.min(pos, input.value.length), Math.min(pos, input.value.length));
-    });
+      rows.forEach(row => {
+        const amount = Math.floor(Number(row.units || 0)) * Number(row.nav || 0);
+        const currentValue = Math.floor(Number(row.units || 0)) * currentNav;
+        const pl = currentValue - amount;
+        const tr = document.createElement('tr');
 
-    if (pad) {
-      pad.addEventListener('click', (e) => {
-        const btn = e.target.closest('button[data-token]');
-        if (!btn) return;
-        const token = btn.dataset.token;
-        if (token === 'Enter') return applyEvaluate();
-        if (token === 'Backspace') {
-          input.value = input.value.slice(0, -1);
-          input.focus();
-          return;
-        }
-        input.value = formatCalcInput(input.value + token);
-        input.focus();
+        const cells = activeSip === 'ALL_SIP'
+          ? [sipName, row.date, Math.floor(row.units), fmtNav(row.nav), currency(amount), fmtNav(currentNav), currency(currentValue), null]
+          : [row.date, Math.floor(row.units), fmtNav(row.nav), currency(amount), fmtNav(currentNav), currency(currentValue), null];
+
+        cells.forEach((val, i) => {
+          const td = document.createElement('td');
+          if (val === null) {
+            td.textContent = currency(pl);
+            td.className = plClass(pl);
+          } else {
+            td.textContent = val;
+            if (val === sipName) td.classList.add('text-col');
+          }
+          tr.appendChild(td);
+        });
+
+        tr.style.cursor = 'pointer';
+        tr.title = 'View installment details';
+        tr.addEventListener('click', () => showInstallmentDetail(sipName, row, currentNav));
+        tbody.appendChild(tr);
       });
+    });
+
+    if (!tbody.children.length) {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = cols.length;
+      td.innerHTML = `<div class="empty-state" style="padding:24px;"><div class="empty-state-icon" style="font-size:24px;">💸</div><div class="empty-state-title">No installments yet</div><div class="empty-state-sub">Add your first installment above.</div></div>`;
+      tr.appendChild(td);
+      tbody.appendChild(tr);
     }
-
-    if (closeBtn) closeBtn.addEventListener('click', closeCalcFloat);
-    renderHistory();
-    makeFloatDraggable(calcFloat, header, closeBtn);
-    setTimeout(() => { if (input) input.focus(); }, 40);
   }
 
-  function makeFloatDraggable(floatEl, handleEl, closeBtnEl) {
-    if (!floatEl || !handleEl) return;
-    let dragActive = false;
-    let startX = 0, startY = 0;
-    let startLeft = 0, startTop = 0;
-    handleEl.addEventListener('mousedown', (e) => {
-      if (e.target === closeBtnEl) return;
-      dragActive = true;
-      const rect = floatEl.getBoundingClientRect();
-      startX = e.clientX;
-      startY = e.clientY;
-      startLeft = rect.left;
-      startTop = rect.top;
-      floatEl.style.left = `${rect.left}px`;
-      floatEl.style.top = `${rect.top}px`;
-      floatEl.style.right = 'auto';
-      e.preventDefault();
+  function showInstallmentDetail(sipName, row, currentNav) {
+    if (!window.Modal) return;
+    const amount = Math.floor(Number(row.units || 0)) * Number(row.nav || 0);
+    const currentValue = Math.floor(Number(row.units || 0)) * currentNav;
+    const pl = currentValue - amount;
+    Modal.open({
+      title: `${sipName} Installment`,
+      body: `<div style="display:grid;gap:8px;font-family:var(--font-mono);font-size:12px;">
+        <div>Date: <strong>${row.date}</strong></div>
+        <div>Units: <strong>${Math.floor(row.units)}</strong></div>
+        <div>NAV Paid: <strong>${fmtNav(row.nav)}</strong></div>
+        <div>Amount Paid: <strong>${currency(amount)}</strong></div>
+        <div>Current NAV: <strong>${fmtNav(currentNav)}</strong></div>
+        <div>Current Value: <strong>${currency(currentValue)}</strong></div>
+        <div>P/L: <strong class="${plClass(pl)}">${currency(pl)}</strong></div>
+      </div>`,
+      footer: `<button class="btn-danger" id="sip-row-del">Delete Entry</button><button class="btn-secondary" onclick="Modal.close()">Close</button>`,
     });
-    window.addEventListener('mousemove', (e) => {
-      if (!dragActive) return;
-      const nextLeft = Math.min(Math.max(8, startLeft + (e.clientX - startX)), window.innerWidth - floatEl.offsetWidth - 8);
-      const nextTop = Math.min(Math.max(50, startTop + (e.clientY - startY)), window.innerHeight - floatEl.offsetHeight - 8);
-      floatEl.style.left = `${nextLeft}px`;
-      floatEl.style.top = `${nextTop}px`;
+    const btn = document.getElementById('sip-row-del');
+    if (btn) btn.addEventListener('click', () => {
+      Modal.confirm({
+        title: 'Delete SIP installment',
+        message: `Delete installment dated ${row.date} from ${sipName}?`,
+        confirmText: 'Delete',
+        onConfirm: () => {
+          state.records[sipName] = (state.records[sipName] || []).filter(r => r.id !== row.id);
+          if (window.PmsCapital) {
+            if (row.fundingSource === 'profit') {
+              window.PmsCapital.adjustProfitCashed(amount, {
+                note: `${sipName} installment deleted`,
+                type: 'profit_refund',
+                kind: 'system',
+                editable: false,
+              });
+            } else {
+              window.PmsCapital.adjustCash(amount);
+            }
+          }
+          Modal.close();
+          persist('Installment deleted.');
+        },
+      });
     });
-    window.addEventListener('mouseup', () => { dragActive = false; });
   }
 
-  function openCalcFloat() {
-    if (!calcFloat) return;
-    if (!calcFloat.innerHTML.trim()) mountQuickCalculator();
-    syncQuickCalcHeight();
-    calcFloat.classList.remove('hidden');
-  }
-  function closeCalcFloat() {
-    if (!calcFloat) return;
-    calcFloat.classList.add('hidden');
-    calcFloat.innerHTML = '';
-  }
-  if (calcPopupBtn) calcPopupBtn.addEventListener('click', openCalcFloat);
-
-  function syncQuickCalcHeight() {
-    if (!calcFloat) return;
-    const txCard = document.querySelector('#view-calculator .calc-transaction-card');
-    const fallbackHeight = 430;
-    const headerHeight = 42;
-    const bodyHeight = txCard ? Math.round(txCard.getBoundingClientRect().height) : fallbackHeight;
-    calcFloat.style.width = '336px';
-    calcFloat.style.height = `${Math.max(280, bodyHeight + headerHeight)}px`;
-  }
-
-  // ── ROUTER ────────────────────────────────────────────────────────
-  let currentView = null;
-
-  function navigate(viewId) {
-    const route = ROUTES[viewId];
-    if (!route) return;
-
-    document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
-    const container = document.getElementById(`view-${viewId}`);
-    if (!container) return;
-    container.classList.remove('hidden');
-
-    document.querySelectorAll('.nav-item').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.view === viewId);
-    });
-
-    pageTitle.textContent = route.title.toUpperCase();
-    if (pageContext) pageContext.textContent = `${route.context || 'SYSTEM'} / ${route.title.toUpperCase()}`;
-
-    // Only render if not rendered yet (or if marked dirty by updateData)
-    if (!renderedViews.has(viewId) || container._dirty) {
-      route.render(container);
-      renderedViews.add(viewId);
-      container._dirty = false;
-    }
-    applyPrivacyMode();
-    updateHeaderTargetProgress();
-
-    currentView = viewId;
-
-    if (window.AppState) window.AppState.dispatch({ type: 'NAVIGATE', payload: viewId });
-  }
-
-  document.querySelectorAll('.nav-item').forEach(btn => {
-    btn.addEventListener('click', () => navigate(btn.dataset.view));
-  });
-
-  function updateTimeClocks() {
-    const now = new Date();
-    const ktm = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kathmandu' });
-    const ny = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/New_York' });
-    if (ktmTime) ktmTime.textContent = ktm;
-    if (nyTime) nyTime.textContent = ny;
-    const h = Number(now.toLocaleTimeString('en-US', { hour: '2-digit', hour12: false, timeZone: 'America/New_York' }));
-    const session = h >= 8 && h < 17 ? 'NEW YORK OPEN' : h >= 3 && h < 8 ? 'LONDON' : 'ASIA';
-    if (sessionIndicator) sessionIndicator.textContent = `Session: ${session}`;
-  }
-  setInterval(updateTimeClocks, 30000);
-  updateTimeClocks();
-
-  // ── MARKET CLOCK ──────────────────────────────────────────────────
-  window.startMarketClock(({ status, time, label }) => {
-    if (statusDot) statusDot.className = `status-dot ${status}`;
-    if (statusLabel) statusLabel.textContent = label;
-    if (statusTime) statusTime.textContent = time;
-  });
-
-  // ── CASH DISPLAY ──────────────────────────────────────────────────
-  function updateCashDisplay() {
+  function addEntry(sipName, entry, fundingSource = 'cash') {
+    state.records[sipName] = state.records[sipName] || [];
+    const nav = Number(entry.nav || 0);
+    const units = Math.floor(Number(entry.units || 0));
+    const amount = units * nav;
+    state.records[sipName].push({ ...entry, units, nav, amount, fundingSource });
     if (window.PmsCapital) {
-      const cash = window.PmsCapital.readCash();
-      if (headerCash) {
-        if (window.PmsPrivacy && window.PmsPrivacy.isEnabled && window.PmsPrivacy.isEnabled()) {
-          headerCash.textContent = window.PmsPrivacy.maskValue();
-          return;
-        }
-        headerCash.textContent = `Rs ${new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(cash)}`;
-        if (window.PmsDisplay && !window.PmsDisplay.showRsPrefix()) {
-          headerCash.textContent = `${new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(cash)}`;
-        }
-      }
+      if (fundingSource === 'profit') window.PmsCapital.adjustProfitCashed(-amount, {
+        note: `${sipName} installment added`,
+        type: 'profit_used',
+        kind: 'system',
+        editable: false,
+      });
+      else window.PmsCapital.adjustCash(-amount);
     }
   }
 
-  function updateHeaderTargetProgress() {
-    if (!headerTargetValue || !headerTargetFill) return;
-    const totals = window.Analytics ? window.Analytics.getPortfolioTotals() : { total: 0 };
-    const targetWorth = 15000000;
-    const cash = window.PmsCapital ? window.PmsCapital.readCash() : 0;
-    const currentWorth = Number(totals.total || 0) + Math.max(0, Number(cash || 0));
-    const completion = Math.max(0, Math.min(100, (currentWorth / targetWorth) * 100));
-    headerTargetValue.textContent = (window.PmsPrivacy && window.PmsPrivacy.isEnabled && window.PmsPrivacy.isEnabled())
-      ? maskValue()
-      : `${completion.toFixed(2)}%`;
-    headerTargetFill.style.width = `${completion.toFixed(2)}%`;
-  }
+  function pickFundingSource(amount, onConfirm) {
+    if (!window.PmsCapital || !window.Modal) { onConfirm('cash'); return; }
+    const cashBalance = Number(window.PmsCapital.readCash() || 0);
+    const profitBalance = Number(window.PmsCapital.readProfitCashedOut() || 0);
+    const hasCash = cashBalance >= amount;
+    const hasProfit = profitBalance >= amount;
+    if (!hasCash && !hasProfit) return show('Not enough cash or profit cashed balance.');
+    if (hasCash && !hasProfit) { onConfirm('cash'); return; }
+    if (!hasCash && hasProfit) { onConfirm('profit'); return; }
 
-  window.addEventListener('pms-cash-updated', updateCashDisplay);
-  window.addEventListener('pms-cash-updated', updateHeaderTargetProgress);
-  updateCashDisplay();
-  updateHeaderTargetProgress();
-
-  if (window.PmsProfitBook) window.PmsProfitBook.syncWithLedger();
-
-  // ── ALERT SYSTEM ──────────────────────────────────────────────────
-  let alertTimer = null;
-
-  function showAlert(message, isSuccess) {
-    alertText.textContent = message;
-    alertBar.classList.remove('hidden');
-    alertBar.style.borderColor = isSuccess ? 'var(--green)' : 'var(--red)';
-    alertBar.style.color = isSuccess ? 'var(--green)' : 'var(--red)';
-    clearTimeout(alertTimer);
-    alertTimer = setTimeout(() => alertBar.classList.add('hidden'), 4000);
-  }
-
-  alertClose.addEventListener('click', () => alertBar.classList.add('hidden'));
-  window.PmsCapital.showCashAlert = showAlert;
-
-  // ── UPDATE LTP ────────────────────────────────────────────────────
-  ltpBtn.addEventListener('click', () => ltpInput.click());
-  ltpInput.addEventListener('change', async e => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    ltpStatus.textContent = '⟳ …';
-    try {
-      const text  = await file.text();
-      const count = window.LtpUpdater.processCSVText(text);
-      ltpStatus.textContent = `✓ ${count}`;
-      showAlert(`LTP updated: ${count} stocks`, true);
-      setTimeout(() => { ltpStatus.textContent = ''; }, 4000);
-    } catch (err) {
-      ltpStatus.textContent = `✕`;
-      showAlert(`LTP error: ${err.message}`, false);
-      setTimeout(() => { ltpStatus.textContent = ''; }, 5000);
-    } finally { e.target.value = ''; }
-  });
-
-  // ── DOWNLOAD / UPLOAD ─────────────────────────────────────────────
-  downloadDataBtn.addEventListener('click', async () => {
-    try {
-      const password = await Modal.prompt({
-        title: 'Export Encrypted CSV',
-        subtitle: 'Create a backup password',
-        label: 'Password',
-        inputType: 'password',
-        placeholder: 'Enter password',
-        confirmText: 'Continue',
-      });
-      if (!password) return;
-      const confirmPassword = await Modal.prompt({
-        title: 'Confirm Password',
-        subtitle: 'Re-enter backup password',
-        label: 'Confirm password',
-        inputType: 'password',
-        placeholder: 'Enter password again',
-        confirmText: 'Export',
-      });
-      if (password !== confirmPassword) {
-        showAlert('Passwords do not match.', false);
-        return;
-      }
-      const csvData = await window.PmsBackup.createEncryptedBackupCSV(password);
-      const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8' });
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement('a');
-      a.href = url;
-      a.download = `NEPSE-Backup-${new Date().toISOString().slice(0, 10)}.csv`;
-      document.body.appendChild(a); a.click(); a.remove();
-      URL.revokeObjectURL(url);
-      showAlert('Encrypted CSV backup exported.', true);
-    } catch { showAlert('Export failed.', false); }
-  });
-
-  uploadDataBtn.addEventListener('click', () => dataFileInput.click());
-  dataFileInput.addEventListener('change', async (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    try {
-      const password = await Modal.prompt({
-        title: 'Import Encrypted CSV',
-        subtitle: 'Enter backup password',
-        label: 'Password',
-        inputType: 'password',
-        placeholder: 'Enter password',
-        confirmText: 'Import',
-      });
-      if (!password) return;
-      const text = await file.text();
-      await window.PmsBackup.restoreEncryptedBackupCSV(text, password);
-      showAlert('Data restored. Reloading…', true);
-      setTimeout(() => location.reload(), 600);
-    } catch (err) {
-      showAlert(err && err.message === 'Access Denied' ? 'Access Denied' : 'Invalid backup file.', false);
-    }
-    finally { e.target.value = ''; }
-  });
-
-  // ── MIDDLE-MOUSE SCROLL ───────────────────────────────────────────
-  function enableMiddleMouseScroll(scroller) {
-    if (!scroller) return;
-    let active = false, anchorY = 0, velocity = 0, frame = null;
-    const tick = () => {
-      if (!active) return;
-      if (Math.abs(velocity) > 0.1) scroller.scrollBy({ top: velocity, behavior: 'auto' });
-      frame = requestAnimationFrame(tick);
-    };
-    scroller.addEventListener('mousedown', e => {
-      if (e.button !== 1) return;
-      e.preventDefault();
-      active = true; anchorY = e.clientY; velocity = 0;
-      scroller.style.cursor = 'ns-resize';
-      if (!frame) frame = requestAnimationFrame(tick);
+    Modal.open({
+      title: 'Choose Balance',
+      subtitle: 'Select one balance to fund this SIP entry',
+      body: `
+        <div style="display:grid;gap:10px;font-family:var(--font-mono);font-size:12px;">
+          <div>Required: <strong>${currency(amount)}</strong></div>
+          <label style="display:flex;align-items:center;gap:8px;">
+            <input type="radio" name="sip-funding-source" value="cash" checked />
+            <span>Cash Balance — <strong>${currency(cashBalance)}</strong></span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;">
+            <input type="radio" name="sip-funding-source" value="profit" />
+            <span>Profit Cashed Balance — <strong>${currency(profitBalance)}</strong></span>
+          </label>
+        </div>
+      `,
+      footer: `<button class="btn-secondary" id="sip-fund-cancel">Cancel</button><button class="btn-primary" id="sip-fund-confirm">Use Balance</button>`,
     });
-    window.addEventListener('mousemove', e => {
-      if (!active) return;
-      velocity = (e.clientY - anchorY) * 0.18;
+    const box = document.getElementById('modalBox');
+    box.querySelector('#sip-fund-cancel')?.addEventListener('click', Modal.close);
+    box.querySelector('#sip-fund-confirm')?.addEventListener('click', () => {
+      const source = box.querySelector('input[name="sip-funding-source"]:checked')?.value || 'cash';
+      Modal.close();
+      onConfirm(source);
     });
-    const stop = () => {
-      if (!active) return;
-      active = false; velocity = 0; scroller.style.cursor = '';
-      if (frame) cancelAnimationFrame(frame); frame = null;
-    };
-    window.addEventListener('mouseup', e => { if (e.button === 1) stop(); });
-    window.addEventListener('keydown', e => { if (e.key === 'Escape') stop(); });
   }
 
-  enableMiddleMouseScroll(document.querySelector('.view-container'));
-  enableMiddleMouseScroll(document.getElementById('sidebar'));
+  function isMonthAllowed(sipName, month) {
+    const min = minimumMonthForSip(sipName);
+    return month >= min;
+  }
 
-  // ── LTP-updated: only refresh current view if it's dashboard ─────
-  window.addEventListener('pms-ltp-updated', () => {
-    updateCashDisplay();
-    updateHeaderTargetProgress();
-    // Mark non-current views dirty; re-render current immediately
-    document.querySelectorAll('.view').forEach(v => { v._dirty = true; });
-    renderedViews.clear();
-    if (currentView && ROUTES[currentView]) {
-      const container = document.getElementById(`view-${currentView}`);
-      if (container) {
-        ROUTES[currentView].render(container);
-        renderedViews.add(currentView);
-        container._dirty = false;
-        applyPrivacyMode();
-        updateHeaderTargetProgress();
+  function minimumMonthForSip(sipName) {
+    const reg = (state.registeredAt || {})[sipName];
+    if (reg) return reg.slice(0, 7);
+    return '2000-01';
+  }
+
+  function monthExists(sipName, month) {
+    return (state.records[sipName] || []).some(r => monthFromDate(r.date) === month);
+  }
+
+  function monthFromDate(date) { return String(date || '').slice(0, 7); }
+  function isValidDate(date) { return /^\d{4}-\d{2}-\d{2}$/.test(date); }
+  function todayMonth() { return new Date().toISOString().slice(0, 7); }
+  function todayDate()  { return new Date().toISOString().slice(0, 10); }
+  function month15(month) { return `${month}-15`; }
+  function fmtNav(v) { return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v || 0); }
+  function fmtQty(v) { return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(v || 0); }
+
+  function persist(msg = 'Saved ✓') {
+    state.activeSip = activeSip;
+    localStorage.setItem(SIP_KEY, JSON.stringify(state));
+    show(msg);
+    render();
+    window.dispatchEvent(new CustomEvent('pms-portfolio-updated'));
+  }
+
+  function show(text) { msgEl.textContent = text; setTimeout(() => { if (msgEl.textContent === text) msgEl.textContent = ''; }, 3000); }
+
+  function updateSaveInd() {
+    saveInd.classList.add('visible');
+    setTimeout(() => saveInd.classList.remove('visible'), 1500);
+  }
+
+  function readState() {
+    const LEGACY_KEYS = ['sipStateV3', 'sipStateV2', 'sipData'];
+    try {
+      const raw = localStorage.getItem(SIP_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && Array.isArray(parsed.sips)) return normalizeState(parsed);
       }
+    } catch {}
+    // Try legacy
+    for (const key of LEGACY_KEYS) {
+      try {
+        const legacy = JSON.parse(localStorage.getItem(key) || 'null');
+        if (!legacy) continue;
+        if ((key === 'sipStateV3' || key === 'sipStateV2') && Array.isArray(legacy.sips)) return normalizeState(legacy);
+        if (key === 'sipData' && Array.isArray(legacy)) {
+          return normalizeState({ sips: ['SIP'], records: { SIP: legacy }, currentNav: {} });
+        }
+      } catch {}
     }
-  });
+    return normalizeState({ sips: [], records: {}, currentNav: {} });
+  }
 
-  // ── GLOBAL NAVIGATION ─────────────────────────────────────────────
-  window.navigateTo = function(viewId) {
-    history.pushState(null, '', `#${viewId}`);
-    navigate(viewId);
-  };
+  function normalizeState(input) {
+    const sips = Array.from(new Set((input.sips || []).map(s => String(s || '').trim().toUpperCase()).filter(Boolean)));
+    const records = {}, currentNav = { ...(input.currentNav || {}) };
+    const registeredAt = { ...(input.registeredAt || {}) };
+    sips.forEach(sip => {
+      records[sip] = Array.isArray((input.records || {})[sip])
+        ? input.records[sip].map(r => ({
+          id: r.id || crypto.randomUUID(),
+          date: String(r.date || month15(todayMonth())),
+          units: Math.floor(Number(r.units || (Number(r.amount || 0) / Number(r.nav || 1)))),
+          nav: Number(r.nav || 0),
+          amount: Math.floor(Number(r.units || (Number(r.amount || 0) / Number(r.nav || 1)))) * Number(r.nav || 0),
+        }))
+        : [];
+      records[sip].sort((a, b) => a.date.localeCompare(b.date));
+      if (!registeredAt[sip]) {
+        registeredAt[sip] = records[sip][0]?.date || month15(todayMonth());
+      }
+      if (!isFinite(currentNav[sip])) {
+        currentNav[sip] = records[sip].length ? records[sip][records[sip].length - 1].nav : 0;
+      }
+    });
+    return { sips, records, currentNav, registeredAt, activeSip: input.activeSip || 'ALL_SIP' };
+  }
+}
 
-  window.addEventListener('hashchange', () => {
-    const hash = location.hash.replace('#', '');
-    if (ROUTES[hash]) navigate(hash);
-  });
-
-  // ── INIT ──────────────────────────────────────────────────────────
-  const initHash = location.hash.replace('#', '');
-  navigate(ROUTES[initHash] ? initHash : 'dashboard');
-  applyPrivacyMode();
-})();
+window._renderSip = renderSip;
