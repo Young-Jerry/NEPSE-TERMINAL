@@ -99,32 +99,6 @@ function renderSettings(container) {
       </div>
     </div>
 
-    <!-- Cash Management -->
-    <div class="settings-section">
-      <div class="settings-title">
-        <svg viewBox="0 0 16 16" width="16"><rect x="1" y="4" width="14" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M1 7h14" stroke="currentColor" stroke-width="1.5"/><circle cx="5" cy="11" r="1" fill="currentColor"/></svg>
-        Cash Balance
-      </div>
-      <div class="settings-row">
-        <div>
-          <div class="settings-row-label">Current Balance</div>
-          <div class="settings-row-sub">Your available cash balance.</div>
-        </div>
-        <span class="mono value-blue" id="settings-cash-val" style="font-size:14px;font-weight:700;"></span>
-      </div>
-      <div class="settings-row">
-        <div>
-          <div class="settings-row-label">Override Balance</div>
-          <div class="settings-row-sub">Manually set the cash balance (use with caution — bypasses ledger).</div>
-        </div>
-        <div class="toolbar">
-          <input type="number" class="form-input" id="settings-cash-input" placeholder="50000" min="0" step="1" style="width:120px;" />
-          <button class="btn-danger" id="settings-set-cash-btn">Set</button>
-        </div>
-      </div>
-    </div>
-
-
     <!-- SIP Due Date -->
     <div class="settings-section">
       <div class="settings-title">
@@ -181,29 +155,14 @@ function renderSettings(container) {
       <div class="settings-row">
         <div>
           <div class="settings-row-label">Reset Entire Portfolio</div>
-          <div class="settings-row-sub">⚠️ Wipes ALL data — positions, history, cash, SIPs. Irreversible.</div>
+          <div class="settings-row-sub">⚠️ Wipes ALL data — positions, history, SIPs. Irreversible.</div>
         </div>
         <button class="btn-danger" id="settings-nuke-btn">Reset Everything</button>
       </div>
     </div>
   `;
 
-  // Cash display
-  const updateCashDisplay = () => {
-    const el = container.querySelector('#settings-cash-val');
-    if (el && window.PmsCapital) el.textContent = currencyInt(window.PmsCapital.readCash());
-  };
-  const updateSipDueDisplay = () => {
-    const current = container.querySelector('#settings-sip-due-current');
-    const input = container.querySelector('#settings-sip-due-day-input');
-    if (!current || !input || !window.PmsSettings) return;
-    const dueDay = window.PmsSettings.getSipDueDay();
-    current.textContent = dueDay ? `${dueDay}th` : 'NOT GIVEN';
-    input.value = dueDay || '';
-  };
-  updateCashDisplay();
   updateSipDueDisplay();
-  window.addEventListener('pms-cash-updated', updateCashDisplay);
 
   // Backup
   container.querySelector('#settings-backup-btn').addEventListener('click', async () => {
@@ -278,18 +237,6 @@ function renderSettings(container) {
     finally { e.target.value = ''; }
   });
 
-  // Set cash
-  container.querySelector('#settings-set-cash-btn').addEventListener('click', () => {
-    const val = Math.round(Number(container.querySelector('#settings-cash-input').value));
-    if (!isFinite(val) || val < 0) return;
-    Modal.confirm({
-      title: 'Override Cash Balance',
-      message: `Set cash balance to ${currencyInt(val)}? This bypasses the ledger.`,
-      confirmText: 'Override',
-      onConfirm: () => { window.PmsCapital.setCash(val); updateCashDisplay(); showStatus('Cash balance updated ✓'); },
-    });
-  });
-
   // SIP due day
   container.querySelector('#settings-sip-due-save-btn').addEventListener('click', () => {
     if (!window.PmsSettings) return;
@@ -323,7 +270,7 @@ function renderSettings(container) {
   container.querySelector('#settings-nuke-btn').addEventListener('click', () => {
     Modal.confirm({
       title: '⚠️ Reset Everything',
-      message: 'This will permanently erase ALL portfolio data, cash, trades, SIPs, and history. There is no undo.',
+      message: 'This will permanently erase ALL portfolio data, trades, SIPs, and history. There is no undo.',
       confirmText: 'DELETE EVERYTHING',
       onConfirm: () => { localStorage.clear(); showStatus('All data cleared. Reloading…'); setTimeout(() => location.reload(), 800); },
     });

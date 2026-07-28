@@ -126,60 +126,8 @@ function createPortfolioView({ storageKey, showRanges = false, showInvested = tr
     };
     if (!record.script || !Number.isFinite(record.ltp) || !Number.isFinite(record.wacc) || record.qty <= 0) return;
 
-    const investedAmount = record.wacc * record.qty;
-    pickFundingSource(investedAmount, (source) => {
-      rows.push(record);
-      if (window.PmsCapital) {
-        if (source === 'profit') window.PmsCapital.adjustProfitCashed(-investedAmount, {
-          note: `${record.script} position added (${title})`,
-          type: 'profit_used',
-          kind: 'system',
-          editable: false,
-        });
-        else window.PmsCapital.adjustCash(-investedAmount);
-      }
-      persist();
-    });
-  }
-
-  function pickFundingSource(amount, onConfirm) {
-    if (!window.PmsCapital || !window.Modal) { onConfirm('cash'); return; }
-    const cashBalance = Number(window.PmsCapital.readCash() || 0);
-    const profitBalance = Number(window.PmsCapital.readProfitCashedOut() || 0);
-    const hasCash = cashBalance >= amount;
-    const hasProfit = profitBalance >= amount;
-    if (!hasCash && !hasProfit) {
-      window.PmsCapital.showCashAlert('Not enough cash or profit cashed balance.');
-      return;
-    }
-    if (hasCash && !hasProfit) { onConfirm('cash'); return; }
-    if (!hasCash && hasProfit) { onConfirm('profit'); return; }
-
-    Modal.open({
-      title: 'Choose Balance',
-      subtitle: 'Select one balance to fund this entry',
-      body: `
-        <div style="display:grid;gap:10px;">
-          <div style="font-size:12px;color:var(--text-secondary);">Required: <strong style="color:var(--text-primary);">${currency(amount)}</strong></div>
-          <label style="display:flex;align-items:center;gap:8px;font-size:12px;">
-            <input type="radio" name="funding-source" value="cash" checked />
-            <span>Cash Balance — <strong>${currency(cashBalance)}</strong></span>
-          </label>
-          <label style="display:flex;align-items:center;gap:8px;font-size:12px;">
-            <input type="radio" name="funding-source" value="profit" />
-            <span>Profit Cashed Balance — <strong>${currency(profitBalance)}</strong></span>
-          </label>
-        </div>
-      `,
-      footer: `<button class="btn-secondary" id="fund-cancel">Cancel</button><button class="btn-primary" id="fund-confirm">Use Balance</button>`,
-    });
-    const box = document.getElementById('modalBox');
-    box.querySelector('#fund-cancel')?.addEventListener('click', Modal.close);
-    box.querySelector('#fund-confirm')?.addEventListener('click', () => {
-      const source = box.querySelector('input[name="funding-source"]:checked')?.value || 'cash';
-      Modal.close();
-      onConfirm(source);
-    });
+    rows.push(record);
+    persist();
   }
 
   function render() {
@@ -322,8 +270,6 @@ function createPortfolioView({ storageKey, showRanges = false, showInvested = tr
         message: `Remove ${row.script} (${row.qty} shares)?`,
         confirmText: 'Delete',
         onConfirm: () => {
-          const refund = row.wacc * row.qty;
-          if (window.PmsCapital) window.PmsCapital.adjustCash(refund);
           rows = rows.filter(r => r.id !== row.id);
           persist('Deleted ✓');
         },
@@ -401,7 +347,6 @@ function createPortfolioView({ storageKey, showRanges = false, showInvested = tr
         row.stoploss = stoploss || (wacc * 0.95);
       }
       const newCost = row.wacc * row.qty;
-      if (window.PmsCapital) window.PmsCapital.adjustCash(prevCost - newCost);
       persist();
       Modal.close();
     });
@@ -463,7 +408,6 @@ function createPortfolioView({ storageKey, showRanges = false, showInvested = tr
       holdingDays,
     });
     localStorage.setItem('exitedTradesV2', JSON.stringify(exited));
-    if (window.PmsCapital) window.PmsCapital.adjustCash(Number(calc.netRealizedAmount || calc.realizedAmount || 0));
     rows = rows.filter(r => r.id !== row.id);
     persist('Exited ✓');
   }
@@ -508,7 +452,6 @@ function createPortfolioView({ storageKey, showRanges = false, showInvested = tr
         else if (key === 'stoploss' && showRanges) row.stoploss = Math.max(0, num(input.value) || 0);
       });
       const costAfter = rows.reduce((s, r) => s + r.wacc * r.qty, 0);
-      if (window.PmsCapital) window.PmsCapital.adjustCash(costBefore - costAfter);
       persist('Mass update saved ✓');
       Modal.close();
     });

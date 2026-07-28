@@ -84,17 +84,7 @@ window.PmsTradeMath = {
   calculateRoundTrip, capitalGainTaxRate,
 };
 
-// ─── CAPITAL MANAGER (preserved from capital-manager.js) ──────────────────
-const CASH_KEY = 'cashBalanceV1';
-const LEDGER_KEY = 'cashLedgerV1';
-const PROFIT_OUT_FEE = 8;
-const PROFIT_IN_FEE = 2;
-const PROFIT_CASHED_BAL_KEY = 'profitCashedBalanceV1';
-const PROFIT_BOOK_SERIES_KEY = 'profitBookedSeriesV1';
-const PROFIT_CASHED_BASE_KEY = 'profitCashedBaseV1';
-const PROFIT_BOOK_START_DATE = '2026-04-06';
-const PROFIT_BOOK_START_VALUE = 5070;
-
+// ─── INVESTMENT TRACKER (cashless compatibility layer) ─────────────────────
 function normalizeMoney(value) {
   const n = Number(value || 0);
   if (!Number.isFinite(n)) return 0;
@@ -102,84 +92,9 @@ function normalizeMoney(value) {
   return Math.abs(rounded) < 1e-9 ? 0 : rounded;
 }
 
-function readCash() {
-  const value = Number(localStorage.getItem(CASH_KEY) || 0);
-  return normalizeMoney(value);
-}
-
-function readLedger() {
-  try {
-    const rows = JSON.parse(localStorage.getItem(LEDGER_KEY) || '[]');
-    return Array.isArray(rows) ? rows : [];
-  } catch { return []; }
-}
-
-function saveLedger(rows) {
-  localStorage.setItem(LEDGER_KEY, JSON.stringify(rows));
-}
-
-function setCash(value) {
-  const safe = normalizeMoney(value);
-  localStorage.setItem(CASH_KEY, String(safe));
-  window.dispatchEvent(new CustomEvent('pms-cash-updated', { detail: { cash: readCash() } }));
-}
-
-function adjustCash(delta, meta = {}) {
-  const change = Math.round(Number(delta || 0));
-  if (!Number.isFinite(change) || change === 0) return readCash();
-  const current = readCash();
-  const next = normalizeMoney(current + change);
-  if (next < 0) { showCashAlert('Not enough cash balance.'); return current; }
-  setCash(next);
-  const ledger = readLedger();
-  ledger.push({
-    id: crypto.randomUUID(), createdAt: new Date().toISOString(),
-    delta: change, note: String(meta.note || ''),
-    type: String(meta.type || (change >= 0 ? 'credit' : 'debit')),
-    kind: String(meta.kind || 'system'),
-    entryCategory: String(meta.entryCategory || 'transaction'),
-    baseAmount: Math.round(Number(meta.baseAmount || Math.abs(change))),
-    charges: Number(meta.charges || 0), editable: Boolean(meta.editable),
-    profitDelta: Math.round(Number(meta.profitDelta || 0)),
-  });
-  saveLedger(ledger);
-  return next;
-}
-
-function updateLedgerEntry(id, patch = {}) {
-  const ledger = readLedger();
-  const index = ledger.findIndex((row) => row.id === id);
-  if (index < 0) return;
-  const current = ledger[index];
-  const oldDelta = Math.round(Number(current.delta || 0));
-  const nextDelta = Math.round(Number(patch.delta));
-  const safeNextDelta = Number.isFinite(nextDelta) ? nextDelta : oldDelta;
-  ledger[index] = { ...current, ...patch, delta: safeNextDelta, updatedAt: new Date().toISOString() };
-  const nextCash = normalizeMoney(readCash() - oldDelta + safeNextDelta);
-  if (nextCash < 0) { showCashAlert('Not enough cash balance.'); return; }
-  saveLedger(ledger);
-  setCash(nextCash);
-  syncProfitBookedWithLedger();
-}
-
-function deleteLedgerEntry(id) {
-  const ledger = readLedger();
-  const index = ledger.findIndex((row) => row.id === id);
-  if (index < 0) return;
-  const [removed] = ledger.splice(index, 1);
-  const nextCash = normalizeMoney(readCash() - Math.round(Number(removed.delta || 0)));
-  if (nextCash < 0) { showCashAlert('Not enough cash balance.'); return; }
-  saveLedger(ledger);
-  setCash(nextCash);
-  syncProfitBookedWithLedger();
-}
-
-function clearLedgerHistory() {
-  setProfitCashedBase(readProfitCashedOut());
-  setProfitCashedBalance(readProfitCashedOut());
-  saveLedger([]);
-  syncProfitBookedWithLedger();
-  window.dispatchEvent(new CustomEvent('pms-cash-updated', { detail: { cash: readCash() } }));
+function readJsonRows(key) {
+  try { const p = JSON.parse(localStorage.getItem(key) || '[]'); return Array.isArray(p) ? p : []; }
+  catch { return []; }
 }
 
 function investedCapital() {
@@ -193,193 +108,40 @@ function investedCapital() {
   return tradeInvested + longInvested + sipInvested;
 }
 
-function computeProfitDelta(direction, amount) {
-  const baseAmount = Math.round(Number(amount || 0));
-  if (!Number.isFinite(baseAmount) || baseAmount <= 0) return 0;
-  if (direction === 'out') return -baseAmount;
-  if (direction === 'in') return baseAmount;
-  return 0;
+function dispatchPortfolioUpdated() {
+  window.dispatchEvent(new CustomEvent('pms-portfolio-updated'));
 }
 
-function readProfitCashedBase() {
-  const value = Math.round(Number(localStorage.getItem(PROFIT_CASHED_BASE_KEY) || 0));
-  return Number.isFinite(value) && value > 0 ? value : 0;
-}
-
-function setProfitCashedBase(value) {
-  const safe = Math.max(0, Math.round(Number(value || 0)));
-  localStorage.setItem(PROFIT_CASHED_BASE_KEY, String(safe));
-  return safe;
-}
-
-function readProfitCashedOut() {
-  const raw = localStorage.getItem(PROFIT_CASHED_BAL_KEY);
-  if (raw != null) {
-    const parsed = Math.round(Number(raw || 0));
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-  const legacy = readProfitCashedBase() + readLedger().reduce((sum, row) => {
-    if (row.entryCategory !== 'profit') return sum;
-    const amount = Number(row.baseAmount || Math.abs(Number(row.delta || 0)));
-    if (row.type === 'profit_out') return sum + amount;
-    if (row.type === 'profit_in') return sum - amount;
-    return sum;
-  }, 0);
-  const seeded = Math.max(0, Math.round(Number(legacy || 0)));
-  localStorage.setItem(PROFIT_CASHED_BAL_KEY, String(seeded));
-  return seeded;
-}
-
-function setProfitCashedBalance(value) {
-  const safe = Math.max(0, Math.round(Number(value || 0)));
-  localStorage.setItem(PROFIT_CASHED_BAL_KEY, String(safe));
-  return safe;
-}
-
-function adjustProfitCashed(delta, meta = {}) {
-  const change = Math.round(Number(delta || 0));
-  if (!Number.isFinite(change) || change === 0) return readProfitCashedOut();
-  const current = readProfitCashedOut();
-  const next = Math.max(0, current + change);
-  if (next === current && change < 0) {
-    showCashAlert('Not enough profit cashed balance.');
-    return current;
-  }
-  setProfitCashedBalance(next);
-  const ledger = readLedger();
-  ledger.push({
-    id: crypto.randomUUID(), createdAt: new Date().toISOString(),
-    delta: 0, note: String(meta.note || ''),
-    type: String(meta.type || (change >= 0 ? 'profit_out' : 'profit_in')),
-    kind: String(meta.kind || 'system'),
-    entryCategory: 'profit',
-    baseAmount: Math.abs(change),
-    charges: Number(meta.charges || 0), editable: Boolean(meta.editable),
-    profitDelta: change,
-  });
-  saveLedger(ledger);
-  window.dispatchEvent(new CustomEvent('pms-cash-updated', { detail: { cash: readCash() } }));
-  syncProfitBookedWithLedger();
-  return next;
-}
-
-function addProfitCashEntry(direction, amount, note = '') {
-  const mode = direction === 'in' ? 'in' : 'out';
-  const baseAmount = Math.round(Number(amount || 0));
-  if (!Number.isFinite(baseAmount) || baseAmount <= 0) return readCash();
-  const feeAmount = Math.min(mode === 'in' ? PROFIT_IN_FEE : PROFIT_OUT_FEE, baseAmount);
-  const payoutAmount = Math.max(0, baseAmount - feeAmount);
-  const mainNote = String(note || '').trim() || (mode === 'in' ? 'Profit Cashed In' : 'Profit Cashed Out');
-
-  if (mode === 'out') {
-    const afterPayout = adjustCash(-payoutAmount, {
-      note: `${mainNote} · Net ${payoutAmount}`,
-      type: 'profit_out', kind: 'manual', entryCategory: 'profit',
-      baseAmount: payoutAmount, charges: 0, editable: true,
-      profitDelta: payoutAmount,
-    });
-    if (feeAmount > 0) {
-      adjustCash(-feeAmount, {
-        note: `${mainNote} · Fee ${feeAmount}`,
-        type: 'profit_fee', kind: 'manual', entryCategory: 'profit_fee',
-        baseAmount: feeAmount, charges: 0, editable: true,
-      });
-    }
-    setProfitCashedBalance(readProfitCashedOut() + payoutAmount);
-    syncProfitBookedWithLedger();
-    return afterPayout;
-  }
-
-  const currentProfit = readProfitCashedOut();
-  if (currentProfit < payoutAmount) {
-    showCashAlert('Not enough profit cashed balance.');
-    return readCash();
-  }
-  const afterDeposit = adjustCash(payoutAmount, {
-    note: `${mainNote} · Net ${payoutAmount}`,
-    type: 'profit_in', kind: 'manual', entryCategory: 'profit',
-    baseAmount: payoutAmount, charges: 0, editable: true,
-    profitDelta: -payoutAmount,
-  });
-  if (feeAmount > 0) {
-    adjustCash(-feeAmount, {
-      note: `${mainNote} · Fee ${feeAmount}`,
-      type: 'profit_fee_in', kind: 'manual', entryCategory: 'profit_fee',
-      baseAmount: feeAmount, charges: 0, editable: true,
-    });
-  }
-  setProfitCashedBalance(currentProfit - payoutAmount);
-  syncProfitBookedWithLedger();
-  return afterDeposit;
-}
-
-function readProfitSeries() {
-  try {
-    const rows = JSON.parse(localStorage.getItem(PROFIT_BOOK_SERIES_KEY) || '[]');
-    return Array.isArray(rows) ? rows : [];
-  } catch { return []; }
-}
-
-function saveProfitSeries(rows) {
-  localStorage.setItem(PROFIT_BOOK_SERIES_KEY, JSON.stringify(rows));
-}
-
-function todayIsoDate() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function ensureProfitSeries() {
-  let rows = readProfitSeries();
-  if (!rows.length) {
-    rows = [{ date: PROFIT_BOOK_START_DATE, value: PROFIT_BOOK_START_VALUE }];
-  }
-  rows.sort((a, b) => String(a.date).localeCompare(String(b.date)));
-  const today = todayIsoDate();
-  let cursor = new Date(rows[rows.length - 1].date);
-  const end = new Date(today);
-  while (cursor < end) {
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-    rows.push({ date: cursor.toISOString().slice(0, 10), value: Number(rows[rows.length - 1].value || 0) });
-  }
-  saveProfitSeries(rows);
-  return rows;
-}
-
-function setTodayProfitValue(value) {
-  const rows = ensureProfitSeries();
-  const safe = Math.round(Number(value || 0));
-  const last = rows[rows.length - 1];
-  last.value = Math.max(Number(last.value || 0), safe);
-  saveProfitSeries(rows);
-  return rows;
-}
-
-function syncProfitBookedWithLedger() {
-  return setTodayProfitValue(readProfitCashedOut());
-}
-
+function noopBalance() { return 0; }
+function adjustCashless() { dispatchPortfolioUpdated(); return 0; }
 function showCashAlert(message) {
-  AppState.dispatch({ type: 'SHOW_ALERT', payload: String(message || 'Not enough cash balance.') });
-}
-
-function readJsonRows(key) {
-  try { const p = JSON.parse(localStorage.getItem(key) || '[]'); return Array.isArray(p) ? p : []; }
-  catch { return []; }
+  AppState.dispatch({ type: 'SHOW_ALERT', payload: String(message || 'Cash tracking has been removed. Add investments directly.') });
 }
 
 window.PmsCapital = {
-  CASH_KEY, LEDGER_KEY, readCash, setCash, adjustCash, readLedger,
-  updateLedgerEntry, deleteLedgerEntry, clearLedgerHistory,
-  investedCapital, addProfitCashEntry, computeProfitDelta,
-  readProfitCashedOut, adjustProfitCashed, showCashAlert,
-  updateWidgets: () => window.dispatchEvent(new CustomEvent('pms-cash-updated')),
+  CASH_KEY: null,
+  LEDGER_KEY: null,
+  readCash: noopBalance,
+  setCash: adjustCashless,
+  adjustCash: adjustCashless,
+  readLedger: () => [],
+  updateLedgerEntry: () => {},
+  deleteLedgerEntry: () => {},
+  clearLedgerHistory: () => {},
+  investedCapital,
+  addProfitCashEntry: adjustCashless,
+  computeProfitDelta: () => 0,
+  readProfitCashedOut: noopBalance,
+  adjustProfitCashed: adjustCashless,
+  showCashAlert,
+  updateWidgets: dispatchPortfolioUpdated,
 };
 
 window.PmsProfitBook = {
-  KEY: PROFIT_BOOK_SERIES_KEY,
-  START_DATE: PROFIT_BOOK_START_DATE,
-  readSeries: ensureProfitSeries,
-  syncWithLedger: syncProfitBookedWithLedger,
+  KEY: null,
+  START_DATE: null,
+  readSeries: () => [],
+  syncWithLedger: () => [],
 };
 
 // ─── APP STATE (single source of truth) ───────────────────────────────────
@@ -534,20 +296,29 @@ const LtpUpdater = (() => {
 window.LtpUpdater = LtpUpdater;
 
 // ─── BACKUP / RESTORE ─────────────────────────────────────────────────────
+const REMOVED_CAPITAL_KEYS = new Set([
+  'cashBalanceV1',
+  'cashLedgerV1',
+  'profitCashedBalanceV1',
+  'profitBookedSeriesV1',
+  'profitCashedBaseV1',
+]);
+
 function createPortfolioSnapshot() {
   const data = {};
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
-    if (key) data[key] = localStorage.getItem(key);
+    if (key && !REMOVED_CAPITAL_KEYS.has(key)) data[key] = localStorage.getItem(key);
   }
-  return { version: 2, exportedAt: new Date().toISOString(), data };
+  return { version: 3, exportedAt: new Date().toISOString(), data };
 }
 
 function restorePortfolioSnapshot(payload) {
   const data = payload.data || payload;
   if (typeof data !== 'object') throw new Error('Invalid backup format');
+  REMOVED_CAPITAL_KEYS.forEach(key => localStorage.removeItem(key));
   Object.entries(data).forEach(([key, value]) => {
-    if (typeof value === 'string') localStorage.setItem(key, value);
+    if (typeof value === 'string' && !REMOVED_CAPITAL_KEYS.has(key)) localStorage.setItem(key, value);
   });
 }
 
@@ -781,14 +552,12 @@ const Analytics = (() => {
 
     const tradeValue = tradeLikeTotal(trades);
     const longValue = tradeLikeTotal(longterm);
-    const bookedProfit = Number(readProfitCashedOut() || 0);
 
     return {
       trades: { value: tradeValue, invested: tradeInvested, pl: tradeValue - tradeInvested },
       longterm: { value: longValue, invested: longInvested, pl: longValue - longInvested },
       sip: { value: sipTotal, invested: sipInvested, pl: sipTotal - sipInvested },
-      bookedProfit,
-      total: tradeValue + longValue + sipTotal + bookedProfit,
+      total: tradeValue + longValue + sipTotal,
       totalInvested: tradeInvested + longInvested + sipInvested,
     };
   }
